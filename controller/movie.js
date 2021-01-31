@@ -1,10 +1,8 @@
 
 const movieList = require('../moviesData.json');
-const movieDetailsSchema = require('../schema/movie');
-
-const getMoviesAPI = (req, res) => {
-    res.send(movieList);
-};
+const { movieDetailsSchema, updateMovieDetailsSchema } = require('../schema/movie');
+const Movies = require('../models/movie');
+const { isValidObjectId } = require('mongoose');
 
 const validCheck = (req, res) => {
     const validData = movieDetailsSchema.validate(req.body);
@@ -12,12 +10,59 @@ const validCheck = (req, res) => {
         return validData.error;
     };
 };
+const updateValidCheck = (req, res) => {
+    const validData = updateMovieDetailsSchema.validate(req.body);
+    if (validData.error) {
+        return validData.error;
+    };
+};
 
-const findData = (id) => {
-    return movieList.find(item => item.id === id);
+const findData = (title) => {
+    return movieList.find(item => item.title === title);
 }
 
-const postMoviesAPI = (req, res) => {
+const getMoviesAPI = async (req, res) => {
+    try {
+        const movies = await Movies.find();
+        const response = {
+            isSuccess: true,
+            data: movies
+        }
+        res.send(response);
+    } catch (error) {
+
+    }
+};
+
+const getSingleMovieAPI = async (req, res) => {
+    const {id} = req.params;
+    try {
+        const isValidId = isValidObjectId(id);
+        if (!isValidId) {
+            return res.status(400).send({
+                isSuccess: false,
+                message: 'Invalid Id',
+            })
+        }
+
+        const foundMoviesById = await Movies.findById(id);
+        if (!foundMoviesById) {
+            return res.status(400).send({
+                isSuccess: false,
+                message: 'this Id is not exist.',
+            })
+        }
+
+       return res.send( {
+        isSuccess: true,
+        data: foundMoviesById
+    });
+    } catch (error) {
+
+    }
+};
+
+const postMoviesAPI = async (req, res) => {
     const validError = validCheck(req, res);
     if (validError) {
         return res.status(400).send({
@@ -25,73 +70,94 @@ const postMoviesAPI = (req, res) => {
             message: validError.details[0].message,
         })
     }
-    const foundMovies = findData(req.body.title);
+    const { title } = req.body
+    const foundMovies = await Movies.findOne({ title });
     if (foundMovies) {
         return res.status(400).send({
             isSuccess: false,
-            message: `${req.body.title}, this title is already saved.`
+            message: `${title}, this title is already exist.`
         })
     }
-    
-    const randomNumber = Math.floor(Math.random(6) * 10000000)
-    req.body.id = `tt${randomNumber}`;
-    movieList.push(req.body);
+
+    const movies = await Movies.create(req.body);
     return res.status(200).send({
         isSuccess: true,
-        data: req.body,
-        message: 'saved in DB'
+        data: movies,
+        message: 'New movie created...'
     });
 };
 
-const patchMoviesAPI = (req, res) => {
-    const validError = validCheck(req, res);
+const patchMoviesAPI = async (req, res) => {
+    const { id } = req.params;
+    const isValidId = isValidObjectId(id);
+    if (!isValidId) {
+        return res.status(400).send({
+            isSuccess: false,
+            message: 'Invalid Id',
+        })
+    }
+
+    const validError = updateValidCheck(req, res);
     if (validError) {
         return res.status(400).send({
             isSuccess: false,
             message: validError.details[0].message,
         })
     }
-    const foundMovies = findData(req.body.id);
-    if (foundMovies) {
-        const findIndex = movieList.findIndex((item) => item.id === foundMovies.id);
-        movieList[findIndex] = req.body;
-        return res.status(200).send({
-            isSuccess: true,
-            data: req.body,
-            message: 'update in DB'
-        });
-    }
-    return res.status(400).send({
-        isSuccess: false,
-        message: 'this movie is not match.'
-    });
-};
-
-const deleteMoviesAPI = (req, res) => {
-    const validError = validCheck(req, res);
-    if (validError) {
+    const foundMoviesById = await Movies.findById(id);
+    if (!foundMoviesById) {
         return res.status(400).send({
             isSuccess: false,
-            message: validError.details[0].message,
+            message: 'movie not found.',
         })
     }
-    const foundMovies = findData(req.body.id);
-    if (foundMovies) {
-        const findIndex = movieList.findIndex((item) => item.id === foundMovies.id);
-        movieList.splice(findIndex, 1);
-        return res.status(200).send({
-            isSuccess: true,
-            message: 'delete in DB'
-        });
+
+    const { title } = req.body;
+    const foundMovies = await Movies.findOne({ title });
+
+    if (title !== foundMoviesById.title && foundMovies) {
+        return res.status(400).send({
+            isSuccess: false,
+            message: 'this title already exist.',
+        })
     }
-    return res.status(400).send({
-        isSuccess: false,
-        message: 'this movie is not match.'
+    const resData = await Movies.findByIdAndUpdate(id, req.body, { new: true });
+    return res.status(200).send({
+        isSuccess: true,
+        data: resData,
+        message: 'update in DB'
     });
+
 };
 
-module.exports =  {
-    getMoviesAPI, 
+const deleteMoviesAPI = async(req, res) => {
+    const { id } = req.params;
+    const isValidId = isValidObjectId(id);
+    if (!isValidId) {
+        return res.status(400).send({
+            isSuccess: false,
+            message: 'Invalid Id',
+        })
+    } 
+    const foundMoviesById = await Movies.findById(id);
+if (!foundMoviesById) {
+    return res.status(400).send({
+        isSuccess: false,
+        message: 'this id not found.',
+    })
+}
+
+await Movies.findByIdAndDelete(id);
+    return res.status(200).send({
+        isSuccess: true,
+        message: 'delete in DB'
+    });
+
+};
+
+module.exports = {
+    getMoviesAPI,
+    getSingleMovieAPI,
     postMoviesAPI,
     patchMoviesAPI,
     deleteMoviesAPI
